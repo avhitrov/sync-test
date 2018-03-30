@@ -21,7 +21,10 @@ sub process_request {
 			my $offset = $1;
 #			print "\n\nLet's start from $offset\n";
 
-			open my $fh, "<", $server->{'server'}{'file'}		or return;
+			my $fh;
+			unless ( open $fh, "<", $server->{'server'}{'file'} ) {
+				$server->log(0, "Can't open filename ".$server->{'server'}{'file'}.". Error: ".$!); return;
+			}
 
 			$request->{fh} = $fh;
 			my $loop = IO::Async::Loop->new(
