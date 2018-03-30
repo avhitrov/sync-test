@@ -9,6 +9,9 @@ use IO::Async::Loop;
 
 `mkdir -p $FindBin::Bin/out`;
 my $file = $ARGV[0] || "$FindBin::Bin/out/replica";
+my $host = "localhost";
+my $port = 9999;
+
 open my $fh, ">>", $file;
 
 my $loop = IO::Async::Loop->new;
@@ -17,8 +20,8 @@ while ( 1 ) {
 	my $filesize = (stat $fh)[7] || 0;
 
 	$loop->connect(
-		host	=> "gs2.dat.ru",
-		service	=> 9999,
+		host	=> $host,
+		service	=> $port,
 		socktype	=> 'stream',
 
 		on_stream => sub {

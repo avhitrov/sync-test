@@ -12,8 +12,10 @@ use constant DEBUG => 4;
 
 sub process_request {
 	my $server = shift;
-	$server->{'server'}{'info'}{'connect'}++;
-	$server->{'server'}{'request'} = {};
+	my $parent = $server->{'server'}{'parent_sock'};
+	if ( $parent ) {
+		print $parent "connected\n";
+	}
 	my $request = $server->{'server'}{'request'};
 	while (my $cmd = <STDIN>) {
 		chomp $cmd;
@@ -24,6 +26,9 @@ sub process_request {
 			my $fh;
 			unless ( open $fh, "<", $server->{'server'}{'file'} ) {
 				$server->log(0, "Can't open filename ".$server->{'server'}{'file'}.". Error: ".$!); return;
+			}
+			if ( $parent ) {
+				print $parent "syncstart\n";
 			}
 
 			$request->{fh} = $fh;
@@ -62,13 +67,20 @@ sub process_request {
 			$loop->add( $filestream );
 			$loop->run;
 		} elsif ( $cmd =~ /^info/i ) {
-#			print "Connections: ".($server->{'server'}{'info'}{'connect'} || 0)."\n"; 
-#			print "Client sync: ".($server->{'server'}{'info'}{'sync'} || 0)."\n"; 
-			print Dumper($server);
-			my $socket = $server->{'server'}{'parent_sock'};
-			if ( $socket ) {
-				print $socket "info\n";
+#			print Dumper($server);
+			my $parent = $server->{'server'}{'parent_sock'};
+			if ( $parent ) {
+				print $parent "info\n";
+				my $response = <$parent>;
+				$server->log(DEBUG, $response);
+				if ( $response ) {
+					chomp $response;
+					my %response = split /:/, $response;
+					print "Connections: $response{'conn'}\n"; 
+					print "Client sync: $response{'sync'}\n"; 
+				}
 			}
+			return 0;
 		} elsif ( $cmd =~ /^close/i ) {
 			return 0;
 		}
@@ -77,26 +89,44 @@ sub process_request {
 
 sub post_process_request_hook {
 	my $server = shift;
-	$server->{'server'}{'info'}{'connect'} = $server->{'server'}{'info'}{'connect'} > 0 ? $server->{'server'}{'info'}{'connect'} - 1 : 0;
+	my $parent = $server->{'server'}{'parent_sock'};
 	my $request = $server->{'server'}{'request'};
 	if ( exists $request->{fh} ) {
+		if ( $parent ) {
+			print $parent "syncstop\n";
+		}
 		close $request->{fh};
 	}
 	if ( exists $request->{loop} ) {
 		$request->{loop}->stop;
 	}
 	delete $server->{'server'}{'request'};
+	if ( $parent ) {
+		print $parent "disconnected\n";
+	}
 	$server->log(DEBUG, "Client connection cleared");
 }
 
 sub child_is_talking_hook {
 	my ($server, $child) = @_;
-	$server->log(DEBUG, "Child is talking!");
-	$server->log(DEBUG, Dumper($server));
-	my $data_read;
-	while ( $child->recv($data_read, 256) ) {
+	my $data_read = <$child>;
+	if ( $data_read ) {
+		$server->log(DEBUG, "Child is talking!");
 		$server->log(DEBUG, $data_read);
+		if ( $data_read =~ /^info/ ) {
+			my $info = "conn:".($server->{info}{conn}|| 0).":sync:".($server->{info}{sync} || 0)."\n";
+			syswrite($child, $info);
+		} elsif ( $data_read =~ /^syncstart/ ) {
+			$server->{info}{sync}++;
+		} elsif ( $data_read =~ /^syncstop/ ) {
+			$server->{info}{sync} = $server->{info}{sync} > 0 ? $server->{info}{sync}-1 : 0 ;
+		} elsif ( $data_read =~ /^connected/ ) {
+			$server->{info}{conn}++;
+		} elsif ( $data_read =~ /^disconnected/ ) {
+			$server->{info}{conn} = $server->{info}{conn} > 0 ? $server->{info}{conn}-1 : 0 ;
+		}
 	}
+	return 0;
 }
 
 1;
