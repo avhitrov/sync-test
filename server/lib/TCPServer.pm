@@ -19,7 +19,7 @@ sub process_request {
 		chomp $cmd;
 		if ( $cmd =~ /^get from (\d+)/i ) {
 			my $offset = $1;
-#			print "\n\nLet's start from $offset\n";
+			$server->log(DEBUG, "Start from $offset");
 
 			open my $fh, "<", $server->{'server'}{'file'}		or return;
 
@@ -37,6 +37,8 @@ sub process_request {
 				while ( read( $fh, $buffer, 8192) ) {
 					print $buffer;
 				}
+			} elsif ( $offset > $filesize ) {
+				$server->log(DEBUG, "Remote file is larger: $offset > $filesize");
 			}
 			my $filestream = IO::Async::FileStream->new(
 				read_handle => $fh,
@@ -50,6 +52,7 @@ sub process_request {
 				on_read => sub {
 					my ( $self, $buffref ) = @_;
 					print $$buffref;
+					$$buffref = undef;
 					return 0;
 				},
 			);
